@@ -1,4 +1,5 @@
 import { supabase } from './supabase.js';
+import { wrapBookingUrl } from './lib/booking-url-tracker.js';
 
 /**
  * MCP Tool Definitions
@@ -78,7 +79,7 @@ function formatProduct(row) {
 export const getBusinessProfile = {
   name: 'get_business_profile',
   description:
-    'Returns the full business profile for a Lead Stampede client: name, description, industry, service area, and contact info. Works for both service businesses and e-commerce brands. Use this when an agent needs a general overview of the business.',
+    'Returns the full business profile for a Lead Stampede client: name, description, industry, service area, and contact info. Includes a booking URL when the business has scheduling configured. Works for both service businesses and e-commerce brands. Use this when an agent needs a general overview of the business.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -91,6 +92,15 @@ export const getBusinessProfile = {
   },
   handler: async ({ client_slug }, { agency }) => {
     const client = await findClient(client_slug, agency.id);
+
+    const trackedBookingUrl = await wrapBookingUrl({
+      client,
+      originalBookingUrl: client.booking_url,
+      toolName: 'get_business_profile',
+      toolCallId: null,
+      supabase,
+    });
+
     return {
       business_name: client.business_name,
       tagline: client.tagline,
@@ -103,6 +113,7 @@ export const getBusinessProfile = {
         email: client.email,
         website: client.website,
         shop_url: client.shop_url,
+        booking_url: trackedBookingUrl,
       },
     };
   },
@@ -151,10 +162,18 @@ export const getAvailability = {
   handler: async ({ client_slug }, { agency }) => {
     const client = await findClient(client_slug, agency.id);
 
-    const booking = client.booking_url
+    const trackedBookingUrl = await wrapBookingUrl({
+      client,
+      originalBookingUrl: client.booking_url,
+      toolName: 'get_availability',
+      toolCallId: null,
+      supabase,
+    });
+
+    const booking = trackedBookingUrl
       ? {
           method: 'online_booking',
-          booking_url: client.booking_url,
+          booking_url: trackedBookingUrl,
           note: 'This business offers online scheduling. Direct users to the booking URL.',
         }
       : client.shop_url
