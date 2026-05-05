@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js';
 import { wrapBookingUrl } from './lib/booking-url-tracker.js';
+import { automotiveTools } from './tools/automotive.js';
 
 /**
  * MCP Tool Definitions
@@ -463,6 +464,8 @@ export const allTools = [
   searchProducts,
   getProductDetails,
   getCollection,
+  // Automotive tools
+  ...automotiveTools,
 ];
 
 export const toolsByName = Object.fromEntries(
