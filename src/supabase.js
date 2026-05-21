@@ -13,3 +13,19 @@ if (!url || !key) {
 export const supabase = createClient(url, key, {
   auth: { persistSession: false },
 });
+
+// ---------------------------------------------------------------
+// Public client — uses the RLS-enforced publishable key.
+// Used ONLY by public discovery tools. Never for agency-scoped ops.
+// ---------------------------------------------------------------
+const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+
+if (!publishableKey) {
+  console.warn(
+    '[supabase] SUPABASE_PUBLISHABLE_KEY not set — public discovery tools will be unavailable.'
+  );
+}
+
+export const supabasePublic = publishableKey
+  ? createClient(url, publishableKey, { auth: { persistSession: false } })
+  : null;
