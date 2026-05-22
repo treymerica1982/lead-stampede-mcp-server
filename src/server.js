@@ -7,6 +7,7 @@ import { allTools, toolsByName } from './tools.js';
 import { publicTools, publicToolsByName } from './public-tools.js';
 import { logToolCall } from './analytics.js';
 import { publicRateLimit } from './rate-limit.js';
+import { handleMcpRequest } from './mcp-transport.js';
 
 const app = express();
 app.set('trust proxy', true); // Railway runs behind a proxy; needed for accurate req.ip
@@ -135,6 +136,11 @@ app.post('/mcp/public/tools/:toolName', publicRateLimit, async (req, res) => {
     });
   }
 });
+
+// ---------------------------------------------------------------
+// MCP protocol — stateless Streamable HTTP (public, rate-limited)
+// ---------------------------------------------------------------
+app.post('/mcp', publicRateLimit, handleMcpRequest);
 
 // ---------------------------------------------------------------
 // 404 fallback
