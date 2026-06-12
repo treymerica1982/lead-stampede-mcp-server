@@ -574,30 +574,49 @@ export const contactSales = {
     const client = await findClient(client_slug, agency.id);
     requireAutomotive(client);
 
-    // Best-effort lead persistence (same caveat as service-appointment tool)
-    let lead_id = null;
-    try {
-      const leadPayload = {
-        client_id: client.id,
-        agency_id: agency.id,
-        lead_type: 'sales_inquiry',
-        customer,
-        intent,
-        vehicle: vehicle_of_interest ?? null,
-        preferred_date: preferred_date ?? null,
-        notes: notes ?? null,
-      };
-      const { data: lead, error: leadError } = await supabase
-        .from('automotive_leads')
-        .insert(leadPayload)
-        .select('id')
-        .maybeSingle();
-      if (!leadError && lead) lead_id = lead.id;
-    } catch (e) {
-      console.warn('automotive_leads insert failed (table may not exist yet):', e.message);
+    // Require at least one contact method — a lead with no way to
+    // reach the customer is not actionable.
+    if (!customer.email && !customer.phone) {
+      throw new Error(
+        'A phone number or email is required so the dealership can reach the customer.'
+      );
     }
 
-    // Build a friendly message based on intent
+    // POST to the n8n automotive-lead-capture webhook.
+    // n8n owns the DB write (automotive_leads) and the dealership email
+    // notification via SendGrid. This tool does NOT write to Supabase
+    // directly — single responsibility.
+    const webhookUrl = process.env.LEAD_WEBHOOK_URL;
+    if (!webhookUrl) {
+      throw new Error('LEAD_WEBHOOK_URL is not configured.');
+    }
+
+    // Map the nested contact_sales schema to the webhook's flat payload.
+    const vehicleInterest = vehicle_of_interest
+      ? `${vehicle_of_interest.year ?? ''} ${vehicle_of_interest.make ?? ''} ${vehicle_of_interest.model ?? ''} ${vehicle_of_interest.trim ?? ''}`.trim() || null
+      : null;
+
+    const webhookPayload = {
+      client_slug,
+      inquiry_type: intent,
+      customer_name: `${customer.first_name} ${customer.last_name}`,
+      customer_email: customer.email ?? null,
+      customer_phone: customer.phone ?? null,
+      vehicle_interest: vehicleInterest,
+    };
+
+    const webhookRes = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(webhookPayload),
+    });
+
+    if (!webhookRes.ok) {
+      const body = await webhookRes.text().catch(() => '');
+      throw new Error(`Lead submission failed: ${webhookRes.status} ${body}`.trim());
+    }
+
+    // Intent-specific confirmation messages
     const intentMessages = {
       test_drive: `Test drive request received. ${client.business_name}'s sales team will contact ${customer.first_name} to schedule a time.`,
       vehicle_inquiry: `Vehicle inquiry received. ${client.business_name}'s sales team will follow up with details.`,
@@ -610,7 +629,7 @@ export const contactSales = {
     return {
       business_name: client.business_name,
       status: 'lead_captured',
-      lead_id,
+      lead_id: null,
       intent,
       message: intentMessages[intent],
       sales_phone: client.phone,
