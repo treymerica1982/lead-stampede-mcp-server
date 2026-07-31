@@ -5,9 +5,14 @@ import cors from 'cors';
 import { requireAgencyAuth } from './auth.js';
 import { allTools, toolsByName } from './tools.js';
 import { publicTools, publicToolsByName } from './public-tools.js';
+import { publicInteractionTools, publicInteractionToolsByName, logPublicToolCall } from './public-interaction-tools.js';
 import { logToolCall } from './analytics.js';
 import { publicRateLimit } from './rate-limit.js';
 import { handleMcpRequest } from './mcp-transport.js';
+
+// Combined public tool set: discovery + interaction
+const allPublicTools = [...publicTools, ...publicInteractionTools];
+const allPublicToolsByName = { ...publicToolsByName, ...publicInteractionToolsByName };
 
 const app = express();
 app.set('trust proxy', true); // Railway runs behind a proxy; needed for accurate req.ip
@@ -18,6 +23,40 @@ app.use(express.json({ limit: '1mb' }));
 app.use((req, _res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
   next();
+});
+
+// ---------------------------------------------------------------
+// Root manifest — machine-readable surface map (WS2)
+// ---------------------------------------------------------------
+app.get('/', (_req, res) => {
+  res.json({
+    name: 'lead-stampede',
+    description: 'Discover and transact with Lead Stampede client businesses via AI agents.',
+    version: '0.3.0',
+    surfaces: {
+      mcp: {
+        url: '/mcp',
+        transport: 'streamable-http',
+        auth: 'none',
+        note: 'Primary endpoint for MCP clients. Public discovery + interaction tools.',
+      },
+      public_rest: {
+        list: '/mcp/public/tools',
+        call: '/mcp/public/tools/:tool',
+        auth: 'none',
+      },
+      agency: {
+        list: '/mcp/tools',
+        call: '/mcp/tools/:tool',
+        auth: 'X-Agency-API-Key',
+        note: 'Agency management surface — not for external agents.',
+      },
+    },
+    discovery: {
+      directory: 'https://agentcards.leadstampede.io/directory',
+      agent_cards: 'https://agentcards.leadstampede.io/<slug>',
+    },
+  });
 });
 
 // ---------------------------------------------------------------
@@ -101,7 +140,7 @@ app.post('/mcp/tools/:toolName', requireAgencyAuth, async (req, res) => {
 // ---------------------------------------------------------------
 app.get('/mcp/public/tools', publicRateLimit, (_req, res) => {
   res.json({
-    tools: publicTools.map(({ name, description, inputSchema }) => ({
+    tools: allPublicTools.map(({ name, description, inputSchema }) => ({
       name,
       description,
       inputSchema,
@@ -112,7 +151,7 @@ app.get('/mcp/public/tools', publicRateLimit, (_req, res) => {
 app.post('/mcp/public/tools/:toolName', publicRateLimit, async (req, res) => {
   const { toolName } = req.params;
   const args = req.body?.arguments ?? {};
-  const tool = publicToolsByName[toolName];
+  const tool = allPublicToolsByName[toolName];
 
   if (!tool) {
     return res.status(404).json({
@@ -125,10 +164,28 @@ app.post('/mcp/public/tools/:toolName', publicRateLimit, async (req, res) => {
   try {
     const result = await tool.handler(args);
     const responseMs = Date.now() - start;
+
+    // Public analytics logging (fire-and-forget)
+    logPublicToolCall({
+      clientSlug: args.client_slug,
+      toolName,
+      responseMs,
+      success: true,
+    });
+
     res.json({ tool: toolName, result, response_ms: responseMs });
   } catch (err) {
     const responseMs = Date.now() - start;
     console.error(`[public-tool:${toolName}]`, err.message);
+
+    logPublicToolCall({
+      clientSlug: args.client_slug,
+      toolName,
+      responseMs,
+      success: false,
+      errorMessage: err.message,
+    });
+
     res.status(400).json({
       error: 'tool_error',
       tool: toolName,
@@ -142,11 +199,25 @@ app.post('/mcp/public/tools/:toolName', publicRateLimit, async (req, res) => {
 // ---------------------------------------------------------------
 app.post('/mcp', publicRateLimit, handleMcpRequest);
 
+// GET /mcp hint — tell agents how to use this endpoint (WS2)
+app.get('/mcp', (_req, res) => {
+  res.json({
+    hint: 'POST JSON-RPC requests to this endpoint to use MCP tools. See GET / for the full surface map.',
+    transport: 'streamable-http',
+    auth: 'none',
+    tools_list: 'Send a JSON-RPC tools/list request via POST to enumerate available tools.',
+  });
+});
+
 // ---------------------------------------------------------------
-// 404 fallback
+// 404 fallback — with discovery hint (WS2)
 // ---------------------------------------------------------------
 app.use((_req, res) => {
-  res.status(404).json({ error: 'not_found' });
+  res.status(404).json({
+    error: 'not_found',
+    hint: 'This path does not exist. The Lead Stampede MCP server exposes three surfaces: public MCP (POST /mcp), public REST (/mcp/public/tools), and agency REST (/mcp/tools).',
+    see: '/',
+  });
 });
 
 // ---------------------------------------------------------------

@@ -11,7 +11,12 @@ export async function requireAgencyAuth(req, res, next) {
   if (!apiKey) {
     return res.status(401).json({
       error: 'missing_api_key',
-      message: 'Request must include an X-Agency-API-Key header.',
+      message: 'This is the agency management surface and requires an X-Agency-API-Key header.',
+      public_alternative: {
+        note: 'External agents seeking public business data do NOT need a key.',
+        mcp: '/mcp',
+        public_rest: '/mcp/public/tools',
+      },
     });
   }
 
@@ -30,6 +35,11 @@ export async function requireAgencyAuth(req, res, next) {
     return res.status(401).json({
       error: 'invalid_api_key',
       message: 'The provided API key does not match any agency.',
+      public_alternative: {
+        note: 'External agents seeking public business data do NOT need a key.',
+        mcp: '/mcp',
+        public_rest: '/mcp/public/tools',
+      },
     });
   }
 
