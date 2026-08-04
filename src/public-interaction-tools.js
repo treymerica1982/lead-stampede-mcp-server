@@ -609,6 +609,126 @@ export const getProductDetails = {
 };
 
 // ---------------------------------------------------------------
+// Tool: contact_sales (automotive only, write via webhook)
+// ---------------------------------------------------------------
+export const contactSales = {
+  name: 'contact_sales',
+  description:
+    'Captures a sales lead for an automotive dealership. Use for test drive requests, vehicle inquiries, financing questions, lease questions, trade-in conversations, or general interest. Requires at least one contact method (email or phone). Only available for automotive clients.',
+  isWrite: true, // flag for write-specific rate limiting
+  inputSchema: {
+    type: 'object',
+    properties: {
+      client_slug: { type: 'string', description: 'Unique slug identifying the dealership.' },
+      customer: {
+        type: 'object',
+        description: 'Customer contact information.',
+        properties: {
+          first_name: { type: 'string' },
+          last_name: { type: 'string' },
+          email: { type: 'string', format: 'email' },
+          phone: { type: 'string' },
+          preferred_contact: { type: 'string', enum: ['email', 'phone', 'sms'] },
+          zip_code: { type: 'string' },
+        },
+        required: ['first_name', 'last_name'],
+      },
+      intent: {
+        type: 'string',
+        enum: ['test_drive', 'vehicle_inquiry', 'financing', 'lease', 'trade_in', 'general'],
+        description: 'What the customer is reaching out about.',
+      },
+      vehicle_of_interest: {
+        type: 'object',
+        description: 'Optional — the specific vehicle the customer is asking about.',
+        properties: {
+          vin: { type: 'string' },
+          stock_number: { type: 'string' },
+          year: { type: 'integer' },
+          make: { type: 'string' },
+          model: { type: 'string' },
+          trim: { type: 'string' },
+          stock_type: { type: 'string', enum: ['new', 'used', 'certified'] },
+        },
+      },
+      preferred_date: { type: 'string', format: 'date', description: 'For test_drive: preferred date.' },
+      notes: { type: 'string' },
+    },
+    required: ['client_slug', 'customer', 'intent'],
+  },
+  handler: async ({ client_slug, customer, intent, vehicle_of_interest, preferred_date, notes }) => {
+    const client = await findPublicClient(client_slug);
+    requireAutomotive(client);
+
+    // Require at least one contact method (LD11)
+    if (!customer.email && !customer.phone) {
+      throw new Error(
+        'A phone number or email is required so the dealership can reach the customer.'
+      );
+    }
+
+    const webhookUrl = process.env.LEAD_WEBHOOK_URL;
+    if (!webhookUrl) {
+      throw new Error('LEAD_WEBHOOK_URL is not configured.');
+    }
+
+    // Flat payload matching the existing n8n webhook shape + source/lead_type
+    const vehicleInterest = vehicle_of_interest
+      ? `${vehicle_of_interest.year ?? ''} ${vehicle_of_interest.make ?? ''} ${vehicle_of_interest.model ?? ''} ${vehicle_of_interest.trim ?? ''}`.trim() || null
+      : null;
+
+    const webhookPayload = {
+      client_slug,
+      lead_type: 'contact_sales',
+      inquiry_type: intent,
+      customer_name: `${customer.first_name} ${customer.last_name}`,
+      customer_email: customer.email ?? null,
+      customer_phone: customer.phone ?? null,
+      vehicle_interest: vehicleInterest,
+      source: 'public_mcp',
+    };
+
+    const webhookRes = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(webhookPayload),
+    });
+
+    if (!webhookRes.ok) {
+      const body = await webhookRes.text().catch(() => '');
+      throw new Error(`Lead submission failed: ${webhookRes.status} ${body}`.trim());
+    }
+
+    const intentMessages = {
+      test_drive: `Test drive request received. ${client.business_name}'s sales team will contact ${customer.first_name} to schedule a time.`,
+      vehicle_inquiry: `Vehicle inquiry received. ${client.business_name}'s sales team will follow up with details.`,
+      financing: `Financing inquiry received. ${client.business_name}'s finance team will reach out to discuss options.`,
+      lease: `Lease inquiry received. ${client.business_name}'s leasing team will follow up with current programs.`,
+      trade_in: `Trade-in inquiry received. ${client.business_name}'s buy center will follow up to schedule an appraisal.`,
+      general: `Inquiry received. ${client.business_name}'s sales team will follow up shortly.`,
+    };
+
+    return {
+      business_name: client.business_name,
+      status: 'lead_captured',
+      lead_id: null,
+      intent,
+      message: intentMessages[intent],
+      sales_phone: client.phone,
+      website: client.website,
+      summary: {
+        customer: `${customer.first_name} ${customer.last_name}`,
+        intent,
+        vehicle: vehicle_of_interest
+          ? `${vehicle_of_interest.year ?? ''} ${vehicle_of_interest.make ?? ''} ${vehicle_of_interest.model ?? ''}`.trim() || 'unspecified'
+          : 'none specified',
+        preferred_date: preferred_date ?? null,
+      },
+    };
+  },
+};
+
+// ---------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------
 export const publicInteractionTools = [
@@ -619,8 +739,14 @@ export const publicInteractionTools = [
   getSpecials,
   searchProducts,
   getProductDetails,
+  contactSales,
 ];
 
 export const publicInteractionToolsByName = Object.fromEntries(
   publicInteractionTools.map(t => [t.name, t])
+);
+
+// Write tools — exported separately so server.js can apply the stricter rate limit
+export const publicWriteToolNames = new Set(
+  publicInteractionTools.filter(t => t.isWrite).map(t => t.name)
 );

@@ -3,7 +3,8 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod';
 
 import { publicTools } from './public-tools.js';
-import { publicInteractionTools, logPublicToolCall } from './public-interaction-tools.js';
+import { publicInteractionTools, logPublicToolCall, publicWriteToolNames } from './public-interaction-tools.js';
+import { checkWriteRateLimit } from './rate-limit.js';
 
 // ---------------------------------------------------------------
 // Zod schemas for ALL public tools (discovery + interaction).
@@ -66,6 +67,31 @@ const zodSchemas = {
     client_slug: z.string().describe('Unique slug identifying the e-commerce client.'),
     product_slug: z.string().describe('Slug of the product.'),
   },
+
+  // --- Write tools ---
+  contact_sales: {
+    client_slug: z.string().describe('Unique slug identifying the dealership.'),
+    customer: z.object({
+      first_name: z.string(),
+      last_name: z.string(),
+      email: z.string().optional().describe('Customer email.'),
+      phone: z.string().optional().describe('Customer phone.'),
+      preferred_contact: z.enum(['email', 'phone', 'sms']).optional(),
+      zip_code: z.string().optional(),
+    }).describe('Customer contact information.'),
+    intent: z.enum(['test_drive', 'vehicle_inquiry', 'financing', 'lease', 'trade_in', 'general']).describe('What the customer is reaching out about.'),
+    vehicle_of_interest: z.object({
+      vin: z.string().optional(),
+      stock_number: z.string().optional(),
+      year: z.number().int().optional(),
+      make: z.string().optional(),
+      model: z.string().optional(),
+      trim: z.string().optional(),
+      stock_type: z.enum(['new', 'used', 'certified']).optional(),
+    }).optional().describe('The specific vehicle the customer is asking about.'),
+    preferred_date: z.string().optional().describe('For test_drive: preferred date.'),
+    notes: z.string().optional(),
+  },
 };
 
 // Combined public tool set: discovery + interaction
@@ -76,16 +102,24 @@ const allMcpTools = [...publicTools, ...publicInteractionTools];
 // Called per-request in stateless mode — server + transport are
 // created together and GC'd after the response completes.
 // ---------------------------------------------------------------
-function createMcpServer() {
+function createMcpServer(requestIp) {
   const server = new McpServer({
     name: 'lead-stampede',
-    version: '0.3.0',
+    version: '0.4.0',
   });
 
   for (const tool of allMcpTools) {
     const schema = zodSchemas[tool.name];
 
     server.tool(tool.name, tool.description, schema, async (args) => {
+      // Enforce stricter write rate limit for write tools (LD11)
+      if (publicWriteToolNames.has(tool.name) && !checkWriteRateLimit(requestIp)) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'rate_limited', message: 'Too many write requests. Please slow down.' }) }],
+          isError: true,
+        };
+      }
+
       const start = Date.now();
       try {
         const result = await tool.handler(args);
@@ -129,7 +163,8 @@ function createMcpServer() {
 // Fresh server + transport per request (no session map).
 // ---------------------------------------------------------------
 export async function handleMcpRequest(req, res) {
-  const server = createMcpServer();
+  const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  const server = createMcpServer(ip);
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   await server.connect(transport);
   await transport.handleRequest(req, res, req.body);

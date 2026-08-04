@@ -5,9 +5,9 @@ import cors from 'cors';
 import { requireAgencyAuth } from './auth.js';
 import { allTools, toolsByName } from './tools.js';
 import { publicTools, publicToolsByName } from './public-tools.js';
-import { publicInteractionTools, publicInteractionToolsByName, logPublicToolCall } from './public-interaction-tools.js';
+import { publicInteractionTools, publicInteractionToolsByName, logPublicToolCall, publicWriteToolNames } from './public-interaction-tools.js';
 import { logToolCall } from './analytics.js';
-import { publicRateLimit } from './rate-limit.js';
+import { publicRateLimit, publicWriteRateLimit } from './rate-limit.js';
 import { handleMcpRequest } from './mcp-transport.js';
 
 // Combined public tool set: discovery + interaction
@@ -32,7 +32,7 @@ app.get('/', (_req, res) => {
   res.json({
     name: 'lead-stampede',
     description: 'Discover and transact with Lead Stampede client businesses via AI agents.',
-    version: '0.3.0',
+    version: '0.4.0',
     surfaces: {
       mcp: {
         url: '/mcp',
@@ -148,7 +148,13 @@ app.get('/mcp/public/tools', publicRateLimit, (_req, res) => {
   });
 });
 
-app.post('/mcp/public/tools/:toolName', publicRateLimit, async (req, res) => {
+app.post('/mcp/public/tools/:toolName', publicRateLimit, async (req, res, next) => {
+  // Apply stricter write rate limit for write tools (LD11)
+  if (publicWriteToolNames.has(req.params.toolName)) {
+    return publicWriteRateLimit(req, res, next);
+  }
+  next();
+}, async (req, res) => {
   const { toolName } = req.params;
   const args = req.body?.arguments ?? {};
   const tool = allPublicToolsByName[toolName];

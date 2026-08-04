@@ -56,8 +56,16 @@ class TokenBucket {
 
 const bucket = new TokenBucket(DEFAULT_MAX_TOKENS, DEFAULT_REFILL_MS);
 
+// Stricter bucket for public write tools (lead capture) — LD11
+const WRITE_MAX_TOKENS = 10;
+const WRITE_REFILL_MS = 60_000;
+const writeBucket = new TokenBucket(WRITE_MAX_TOKENS, WRITE_REFILL_MS);
+
 // Periodic cleanup to prevent unbounded memory growth
-setInterval(() => bucket.cleanup(), CLEANUP_INTERVAL_MS).unref();
+setInterval(() => {
+  bucket.cleanup();
+  writeBucket.cleanup();
+}, CLEANUP_INTERVAL_MS).unref();
 
 /**
  * Express middleware — apply to public routes.
@@ -75,4 +83,30 @@ export function publicRateLimit(req, res, next) {
   }
 
   next();
+}
+
+/**
+ * Express middleware — stricter rate limit for public write tools.
+ * Applied in addition to publicRateLimit, not instead of it.
+ */
+export function publicWriteRateLimit(req, res, next) {
+  const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+  if (!writeBucket.consume(ip)) {
+    return res.status(429).json({
+      error: 'rate_limited',
+      message: 'Too many write requests. Please slow down.',
+      retry_after_seconds: Math.ceil(WRITE_REFILL_MS / 1000),
+    });
+  }
+
+  next();
+}
+
+/**
+ * Non-middleware write rate check — for use inside MCP protocol handlers
+ * where per-tool middleware isn't possible. Returns true if allowed.
+ */
+export function checkWriteRateLimit(ip) {
+  return writeBucket.consume(ip);
 }
