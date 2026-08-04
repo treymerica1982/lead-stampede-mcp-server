@@ -32,7 +32,7 @@ app.get('/', (_req, res) => {
   res.json({
     name: 'lead-stampede',
     description: 'Discover and transact with Lead Stampede client businesses via AI agents.',
-    version: '0.4.1',
+    version: '0.5.0',
     surfaces: {
       mcp: {
         url: '/mcp',

@@ -3,6 +3,6 @@
   "name": "io.github.treymerica1982/lead-stampede",
   "description": "Discover, browse inventory, and contact Lead Stampede client businesses via public MCP tools.",
   "repository": { "url": "https://github.com/treymerica1982/lead-stampede-mcp-server", "source": "github" },
-  "version": "0.4.1",
+  "version": "0.5.0",
   "remotes": [{ "type": "streamable-http", "url": "https://lead-stampede-mcp-server-production.up.railway.app/mcp" }]
 }

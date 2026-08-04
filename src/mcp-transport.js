@@ -92,6 +92,27 @@ const zodSchemas = {
     preferred_date: z.string().optional().describe('For test_drive: preferred date.'),
     notes: z.string().optional(),
   },
+  schedule_service_appointment: {
+    client_slug: z.string().describe('Unique slug identifying the dealership.'),
+    customer: z.object({
+      first_name: z.string(),
+      last_name: z.string(),
+      email: z.string().optional().describe('Customer email.'),
+      phone: z.string().optional().describe('Customer phone.'),
+      preferred_contact: z.enum(['email', 'phone', 'sms']).optional(),
+    }).describe('Customer contact information.'),
+    vehicle: z.object({
+      year: z.number().int(),
+      make: z.string(),
+      model: z.string(),
+      vin: z.string().optional(),
+      mileage: z.number().int().optional(),
+    }).describe('Vehicle being serviced.'),
+    services: z.array(z.string()).describe('List of requested services.'),
+    preferred_date: z.string().optional().describe('Preferred date (YYYY-MM-DD).'),
+    preferred_time_window: z.enum(['morning', 'afternoon', 'first-available']).optional(),
+    notes: z.string().optional(),
+  },
 };
 
 // Combined public tool set: discovery + interaction
@@ -105,7 +126,7 @@ const allMcpTools = [...publicTools, ...publicInteractionTools];
 function createMcpServer(requestIp) {
   const server = new McpServer({
     name: 'lead-stampede',
-    version: '0.4.1',
+    version: '0.5.0',
   });
 
   for (const tool of allMcpTools) {

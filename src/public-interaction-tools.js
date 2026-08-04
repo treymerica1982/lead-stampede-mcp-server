@@ -727,6 +727,124 @@ export const contactSales = {
 };
 
 // ---------------------------------------------------------------
+// Tool: schedule_service_appointment (automotive only, write via webhook)
+// ---------------------------------------------------------------
+export const scheduleServiceAppointment = {
+  name: 'schedule_service_appointment',
+  description:
+    'Captures a service appointment request for an automotive dealership. Records the customer\'s contact info, vehicle details, requested services, and preferred timing as a service lead. The dealership\'s service advisor will follow up to confirm. Requires at least one contact method (email or phone). Only available for automotive clients.',
+  isWrite: true,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      client_slug: { type: 'string', description: 'Unique slug identifying the dealership.' },
+      customer: {
+        type: 'object',
+        description: 'Customer contact information.',
+        properties: {
+          first_name: { type: 'string' },
+          last_name: { type: 'string' },
+          email: { type: 'string', format: 'email' },
+          phone: { type: 'string' },
+          preferred_contact: { type: 'string', enum: ['email', 'phone', 'sms'] },
+        },
+        required: ['first_name', 'last_name'],
+      },
+      vehicle: {
+        type: 'object',
+        description: 'Vehicle being serviced.',
+        properties: {
+          year: { type: 'integer' },
+          make: { type: 'string' },
+          model: { type: 'string' },
+          vin: { type: 'string' },
+          mileage: { type: 'integer' },
+        },
+        required: ['year', 'make', 'model'],
+      },
+      services: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'List of requested services, e.g. ["oil change", "tire rotation"].',
+      },
+      preferred_date: { type: 'string', format: 'date' },
+      preferred_time_window: {
+        type: 'string',
+        enum: ['morning', 'afternoon', 'first-available'],
+      },
+      notes: { type: 'string' },
+    },
+    required: ['client_slug', 'customer', 'vehicle', 'services'],
+  },
+  handler: async ({ client_slug, customer, vehicle, services, preferred_date, preferred_time_window, notes }) => {
+    const client = await findPublicClient(client_slug);
+    requireAutomotive(client);
+
+    if (!customer.email && !customer.phone) {
+      throw new Error(
+        'A phone number or email is required so the dealership can reach the customer.'
+      );
+    }
+
+    if (!Array.isArray(services) || services.length === 0) {
+      throw new Error('At least one service must be specified.');
+    }
+
+    const webhookUrl = process.env.LEAD_WEBHOOK_URL;
+    if (!webhookUrl) {
+      throw new Error('LEAD_WEBHOOK_URL is not configured.');
+    }
+
+    // Assemble service_details from services + preferred date/window + notes
+    const parts = [`Requested: ${services.join(', ')}.`];
+    if (preferred_date || preferred_time_window) {
+      const timeParts = [preferred_date, preferred_time_window].filter(Boolean).join(' ');
+      parts.push(`Preferred: ${timeParts}.`);
+    }
+    if (notes) {
+      parts.push(`Notes: ${notes}.`);
+    }
+    const serviceDetails = parts.join(' ');
+
+    const webhookPayload = {
+      client_slug,
+      lead_type: 'service_appointment',
+      inquiry_type: 'service_appointment',
+      customer_name: `${customer.first_name} ${customer.last_name}`,
+      customer_email: customer.email ?? null,
+      customer_phone: customer.phone ?? null,
+      vehicle_interest: `${vehicle.year} ${vehicle.make} ${vehicle.model}`,
+      service_details: serviceDetails,
+      source: 'public_mcp',
+    };
+
+    const webhookRes = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(webhookPayload),
+    });
+
+    if (!webhookRes.ok) {
+      const body = await webhookRes.text().catch(() => '');
+      throw new Error(`Lead submission failed: ${webhookRes.status} ${body}`.trim());
+    }
+
+    return {
+      business_name: client.business_name,
+      status: 'lead_captured',
+      message: `Service appointment request received. ${client.business_name}'s service team will contact ${customer.first_name} to confirm the appointment.`,
+      summary: {
+        customer: `${customer.first_name} ${customer.last_name}`,
+        vehicle: `${vehicle.year} ${vehicle.make} ${vehicle.model}`,
+        services,
+        preferred_date: preferred_date ?? null,
+        preferred_time_window: preferred_time_window ?? null,
+      },
+    };
+  },
+};
+
+// ---------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------
 export const publicInteractionTools = [
@@ -738,6 +856,7 @@ export const publicInteractionTools = [
   searchProducts,
   getProductDetails,
   contactSales,
+  scheduleServiceAppointment,
 ];
 
 export const publicInteractionToolsByName = Object.fromEntries(
