@@ -470,24 +470,22 @@ export const getSpecials = {
     const client = await findPublicClient(client_slug);
     requireAutomotive(client);
 
-    const baseUrl = client.website?.replace(/\/$/, '') ?? '';
-    const specials = [
-      { category: 'new', title: 'New Vehicle Specials', summary: 'Current APR offers, lease deals, and price reductions on new vehicles.', url: `${baseUrl}/newspecials.html` },
-      { category: 'used', title: 'Pre-Owned Specials', summary: 'Pre-owned vehicles with reduced pricing.', url: `${baseUrl}/searchused.aspx?dql=days>60` },
-      { category: 'service', title: 'Service & Parts Specials', summary: 'Coupons and discounts on routine maintenance, parts, and service work.', url: `${baseUrl}/service-parts-specials.html` },
-      { category: 'rebates', title: 'Manufacturer Rebates', summary: 'Current factory rebates and incentives from the manufacturer.', url: `${baseUrl}/manufacturer-specials.aspx` },
-      { category: 'rebates', title: 'College Graduate Program', summary: 'Special pricing and finance offers for recent college graduates.', url: `${baseUrl}/vw-college-grad.html` },
-      { category: 'rebates', title: 'Military Bonus Program', summary: 'Bonus incentives for active military, veterans, and their families.', url: `${baseUrl}/military-bonus.html` },
+    const categories = [
+      { category: 'new', title: 'New Vehicle Specials', summary: 'APR offers, lease deals, and price reductions on new vehicles.' },
+      { category: 'used', title: 'Pre-Owned Specials', summary: 'Pre-owned vehicles with reduced pricing.' },
+      { category: 'service', title: 'Service & Parts Specials', summary: 'Coupons and discounts on routine maintenance, parts, and service work.' },
+      { category: 'rebates', title: 'Manufacturer Rebates & Incentives', summary: 'Factory rebates, college graduate, military, and partner incentive programs.' },
     ];
 
-    const filtered = category === 'all' ? specials : specials.filter(s => s.category === category);
+    const filtered = category === 'all' ? categories : categories.filter(s => s.category === category);
 
     return {
       business_name: client.business_name,
+      website: client.website,
       category,
       result_count: filtered.length,
       specials: filtered,
-      note: "Specials are surfaced from the dealer's public website. For the most current offer details and exclusions, follow the links.",
+      note: 'Current specials are listed on the dealership\'s website. Visit the link for the latest offers, exclusions, and details.',
     };
   },
 };

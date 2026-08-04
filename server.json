@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.treymerica1982/lead-stampede",
-  "description": "Find SMBs by name, city, and business type in the Lead Stampede directory via public MCP tools.",
+  "description": "Discover, browse inventory, and contact Lead Stampede client businesses via public MCP tools.",
   "repository": { "url": "https://github.com/treymerica1982/lead-stampede-mcp-server", "source": "github" },
-  "version": "0.4.0",
+  "version": "0.4.1",
   "remotes": [{ "type": "streamable-http", "url": "https://lead-stampede-mcp-server-production.up.railway.app/mcp" }]
 }

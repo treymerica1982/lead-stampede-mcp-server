@@ -32,7 +32,7 @@ app.get('/', (_req, res) => {
   res.json({
     name: 'lead-stampede',
     description: 'Discover and transact with Lead Stampede client businesses via AI agents.',
-    version: '0.4.0',
+    version: '0.4.1',
     surfaces: {
       mcp: {
         url: '/mcp',
@@ -53,7 +53,6 @@ app.get('/', (_req, res) => {
       },
     },
     discovery: {
-      directory: 'https://agentcards.leadstampede.io/directory',
       agent_cards: 'https://agentcards.leadstampede.io/<slug>',
     },
   });

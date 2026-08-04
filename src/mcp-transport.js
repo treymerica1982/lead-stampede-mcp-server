@@ -105,7 +105,7 @@ const allMcpTools = [...publicTools, ...publicInteractionTools];
 function createMcpServer(requestIp) {
   const server = new McpServer({
     name: 'lead-stampede',
-    version: '0.4.0',
+    version: '0.4.1',
   });
 
   for (const tool of allMcpTools) {
